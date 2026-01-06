@@ -2,25 +2,55 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>YouTube Auto Timestamp Player</title>
+<title>YouTube Timestamp Player Pro</title>
+
 <style>
-body { font-family: Arial, sans-serif; padding: 20px; }
-input, textarea, button { width: 100%; margin: 8px 0; padding: 8px; }
-#player { margin-top: 15px; }
+body {
+  font-family: Arial, sans-serif;
+  padding: 12px;
+}
+
+input, textarea, button {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px;
+  font-size: 14px;
+}
+
+#buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.rangeBtn {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#player {
+  margin-top: 10px;
+  max-width: 100%;
+}
 </style>
 </head>
 <body>
 
-<h2>YouTube Auto Timestamp Player</h2>
+<h3>YouTube Auto Timestamp Player</h3>
 
-<input id="ytlink" placeholder="Paste YouTube link here">
+<input id="ytlink" placeholder="Paste YouTube link">
 
-<textarea id="ranges" rows="8" placeholder=
+<textarea id="ranges" rows="7" placeholder=
 "00:00:00 - 00:05:00
 00:06:00 - 00:10:00"></textarea>
 
-<button onclick="start()">Load & Auto Play</button>
+<button onclick="start()">Load Video</button>
+<button onclick="autoPlay()">Auto Play All</button>
 
+<div id="buttons"></div>
 <div id="player"></div>
 
 <script src="https://www.youtube.com/iframe_api"></script>
@@ -41,6 +71,16 @@ function toSeconds(t) {
   return p[0]*3600 + p[1]*60 + p[2];
 }
 
+function forceLandscape() {
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().then(() => {
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock("landscape").catch(()=>{});
+      }
+    }).catch(()=>{});
+  }
+}
+
 function start() {
   let link = document.getElementById("ytlink").value;
   let vid = extractVideoId(link);
@@ -53,7 +93,7 @@ function start() {
   lines.forEach(l => {
     if (!l.includes("-")) return;
     let p = l.split("-");
-    segments.push([toSeconds(p[0]), toSeconds(p[1])]);
+    segments.push([toSeconds(p[0]), toSeconds(p[1]), l.trim()]);
   });
 
   if (segments.length === 0) { alert("No valid timestamps"); return; }
@@ -61,8 +101,55 @@ function start() {
   if (player) player.destroy();
   player = new YT.Player('player', {
     videoId: vid,
-    events: { 'onReady': playNext }
+    events: {
+      'onReady': onReady
+    }
   });
+
+  makeButtons();
+}
+
+function onReady() {
+  player.setPlaybackRate(2); // default 2x speed
+  forceLandscape();
+}
+
+function makeButtons() {
+  let box = document.getElementById("buttons");
+  box.innerHTML = "";
+
+  segments.forEach((seg, i) => {
+    let b = document.createElement("button");
+    b.className = "rangeBtn";
+    b.textContent = seg[2];
+    b.onclick = () => playOne(i);
+    box.appendChild(b);
+  });
+}
+
+function playOne(i) {
+  if (!player) return;
+  if (checker) clearInterval(checker);
+
+  let s = segments[i][0];
+  let e = segments[i][1];
+
+  index = i;
+  player.setPlaybackRate(2);
+  player.seekTo(s, true);
+  player.playVideo();
+
+  checker = setInterval(() => {
+    if (player.getCurrentTime() >= e) {
+      player.pauseVideo();
+      clearInterval(checker);
+    }
+  }, 200);
+}
+
+function autoPlay() {
+  index = 0;
+  playNext();
 }
 
 function playNext() {
@@ -74,6 +161,7 @@ function playNext() {
   let s = segments[index][0];
   let e = segments[index][1];
 
+  player.setPlaybackRate(2);
   player.seekTo(s, true);
   player.playVideo();
 
@@ -83,9 +171,9 @@ function playNext() {
       player.pauseVideo();
       clearInterval(checker);
       index++;
-      setTimeout(playNext, 400);
+      setTimeout(playNext, 300);
     }
-  }, 250);
+  }, 200);
 }
 </script>
 
