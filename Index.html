@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>YouTube Auto Timestamp Player</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; }
+input, textarea, button { width: 100%; margin: 8px 0; padding: 8px; }
+#player { margin-top: 15px; }
+</style>
+</head>
+<body>
+
+<h2>YouTube Auto Timestamp Player</h2>
+
+<input id="ytlink" placeholder="Paste YouTube link here">
+
+<textarea id="ranges" rows="8" placeholder=
+"00:00:00 - 00:05:00
+00:06:00 - 00:10:00"></textarea>
+
+<button onclick="start()">Load & Auto Play</button>
+
+<div id="player"></div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+
+<script>
+let player;
+let segments = [];
+let index = 0;
+let checker = null;
+
+function extractVideoId(url) {
+  let m = url.match(/(v=|\/)([0-9A-Za-z_-]{11})/);
+  return m ? m[2] : null;
+}
+
+function toSeconds(t) {
+  let p = t.trim().split(":").map(Number);
+  return p[0]*3600 + p[1]*60 + p[2];
+}
+
+function start() {
+  let link = document.getElementById("ytlink").value;
+  let vid = extractVideoId(link);
+  if (!vid) { alert("Invalid YouTube link"); return; }
+
+  segments = [];
+  index = 0;
+
+  let lines = document.getElementById("ranges").value.trim().split("\n");
+  lines.forEach(l => {
+    if (!l.includes("-")) return;
+    let p = l.split("-");
+    segments.push([toSeconds(p[0]), toSeconds(p[1])]);
+  });
+
+  if (segments.length === 0) { alert("No valid timestamps"); return; }
+
+  if (player) player.destroy();
+  player = new YT.Player('player', {
+    videoId: vid,
+    events: { 'onReady': playNext }
+  });
+}
+
+function playNext() {
+  if (index >= segments.length) {
+    alert("All timestamps finished");
+    return;
+  }
+
+  let s = segments[index][0];
+  let e = segments[index][1];
+
+  player.seekTo(s, true);
+  player.playVideo();
+
+  if (checker) clearInterval(checker);
+  checker = setInterval(() => {
+    if (player.getCurrentTime() >= e) {
+      player.pauseVideo();
+      clearInterval(checker);
+      index++;
+      setTimeout(playNext, 400);
+    }
+  }, 250);
+}
+</script>
+
+</body>
+</html>
