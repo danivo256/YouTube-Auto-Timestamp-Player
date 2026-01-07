@@ -5,14 +5,28 @@
 <title>YouTube Timestamp Player Pro</title>
 
 <style>
-body { font-family: Arial, sans-serif; padding: 12px; }
+body {
+  font-family: Arial, sans-serif;
+  background: #000;
+  color: #fff;
+  padding: 12px;
+}
+
+h3 { color: #0f9dff; }
 
 input, textarea, button {
   width: 100%;
   margin: 6px 0;
   padding: 8px;
   font-size: 14px;
+  background: #000;
+  color: #fff;
+  border: 1px solid #333;
 }
+
+textarea { min-height: 120px; }
+
+button { cursor: pointer; }
 
 #buttons {
   display: flex;
@@ -25,35 +39,52 @@ input, textarea, button {
   width: auto;
   padding: 6px 10px;
   font-size: 12px;
-  cursor: pointer;
-  border: 1px solid #888;
-  background: #f2f2f2;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #050505;
+  color: #aaa;
 }
 
 .rangeBtn.active {
-  background: #222;
-  color: white;
-  border-color: #000;
+  background: #00e5ff;
+  color: #000;
+  font-weight: bold;
+  border: 2px solid #fff;
+  box-shadow: 0 0 12px #00e5ff;
 }
 
-#player { margin-top: 10px; max-width: 100%; }
+#player { margin-top: 10px; }
+
+.historyItem {
+  border: 1px solid #222;
+  padding: 8px;
+  margin-top: 6px;
+  cursor: pointer;
+  background: #050505;
+}
+
+.historyItem:hover {
+  background: #0a0a0a;
+}
 </style>
 </head>
 <body>
 
-<h3>YouTube Auto Timestamp Player</h3>
+<h3>YouTube Timestamp Player</h3>
 
 <input id="ytlink" placeholder="Paste YouTube link">
 
-<textarea id="ranges" rows="7" placeholder=
+<textarea id="ranges" placeholder=
 "00:00:00 - 00:05:00
 00:06:00 - 00:10:00"></textarea>
 
 <button onclick="start()">Load Video</button>
-<button onclick="autoPlay()">Auto Play All</button>
 
 <div id="buttons"></div>
 <div id="player"></div>
+
+<h3>History</h3>
+<div id="history"></div>
 
 <script src="https://www.youtube.com/iframe_api"></script>
 
@@ -62,6 +93,7 @@ let player;
 let segments = [];
 let index = -1;
 let checker = null;
+let currentTitle = "";
 
 function extractVideoId(url) {
   let m = url.match(/(v=|\/)([0-9A-Za-z_-]{11})/);
@@ -94,7 +126,7 @@ function highlight(i) {
 }
 
 function start() {
-  let link = document.getElementById("ytlink").value;
+  let link = document.getElementById("ytlink").value.trim();
   let vid = extractVideoId(link);
   if (!vid) { alert("Invalid YouTube link"); return; }
 
@@ -113,13 +145,17 @@ function start() {
   if (player) player.destroy();
   player = new YT.Player('player', {
     videoId: vid,
-    events: { 'onReady': () => {
-      player.setPlaybackRate(2);
-      forceLandscape();
-    }}
+    events: { 'onReady': onReady }
   });
 
   makeButtons();
+}
+
+function onReady() {
+  player.setPlaybackRate(2);
+  forceLandscape();
+  currentTitle = player.getVideoData().title || "Unknown title";
+  saveHistory();
 }
 
 function makeButtons() {
@@ -137,11 +173,6 @@ function makeButtons() {
 
 function playFrom(i) {
   index = i;
-  playNext();
-}
-
-function autoPlay() {
-  index = 0;
   playNext();
 }
 
@@ -167,6 +198,52 @@ function playNext() {
     }
   }, 200);
 }
+
+/* ---------- HISTORY SYSTEM ---------- */
+
+function saveHistory() {
+  let link = document.getElementById("ytlink").value.trim();
+  let ranges = document.getElementById("ranges").value.trim();
+
+  if (!link || !ranges) return;
+
+  let data = JSON.parse(localStorage.getItem("yt_ts_history") || "[]");
+
+  data = data.filter(d => !(d.link === link && d.ranges === ranges));
+
+  data.unshift({
+    link: link,
+    title: currentTitle,
+    ranges: ranges,
+    time: Date.now()
+  });
+
+  if (data.length > 15) data.length = 15;
+
+  localStorage.setItem("yt_ts_history", JSON.stringify(data));
+  renderHistory();
+}
+
+function renderHistory() {
+  let box = document.getElementById("history");
+  box.innerHTML = "";
+
+  let data = JSON.parse(localStorage.getItem("yt_ts_history") || "[]");
+
+  data.forEach(d => {
+    let div = document.createElement("div");
+    div.className = "historyItem";
+    div.innerHTML = "<b>" + d.title + "</b><br><small>" + d.link + "</small>";
+    div.onclick = () => {
+      document.getElementById("ytlink").value = d.link;
+      document.getElementById("ranges").value = d.ranges;
+      start();
+    };
+    box.appendChild(div);
+  });
+}
+
+renderHistory();
 </script>
 
 </body>
