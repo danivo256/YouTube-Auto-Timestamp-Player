@@ -5,10 +5,7 @@
 <title>YouTube Timestamp Player Pro</title>
 
 <style>
-body {
-  font-family: Arial, sans-serif;
-  padding: 12px;
-}
+body { font-family: Arial, sans-serif; padding: 12px; }
 
 input, textarea, button {
   width: 100%;
@@ -29,12 +26,17 @@ input, textarea, button {
   padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
+  border: 1px solid #888;
+  background: #f2f2f2;
 }
 
-#player {
-  margin-top: 10px;
-  max-width: 100%;
+.rangeBtn.active {
+  background: #222;
+  color: white;
+  border-color: #000;
 }
+
+#player { margin-top: 10px; max-width: 100%; }
 </style>
 </head>
 <body>
@@ -58,7 +60,7 @@ input, textarea, button {
 <script>
 let player;
 let segments = [];
-let index = 0;
+let index = -1;
 let checker = null;
 
 function extractVideoId(url) {
@@ -81,13 +83,23 @@ function forceLandscape() {
   }
 }
 
+function clearHighlight() {
+  document.querySelectorAll(".rangeBtn").forEach(b => b.classList.remove("active"));
+}
+
+function highlight(i) {
+  clearHighlight();
+  let btns = document.querySelectorAll(".rangeBtn");
+  if (btns[i]) btns[i].classList.add("active");
+}
+
 function start() {
   let link = document.getElementById("ytlink").value;
   let vid = extractVideoId(link);
   if (!vid) { alert("Invalid YouTube link"); return; }
 
   segments = [];
-  index = 0;
+  index = -1;
 
   let lines = document.getElementById("ranges").value.trim().split("\n");
   lines.forEach(l => {
@@ -101,17 +113,13 @@ function start() {
   if (player) player.destroy();
   player = new YT.Player('player', {
     videoId: vid,
-    events: {
-      'onReady': onReady
-    }
+    events: { 'onReady': () => {
+      player.setPlaybackRate(2);
+      forceLandscape();
+    }}
   });
 
   makeButtons();
-}
-
-function onReady() {
-  player.setPlaybackRate(2); // default 2x speed
-  forceLandscape();
 }
 
 function makeButtons() {
@@ -122,29 +130,14 @@ function makeButtons() {
     let b = document.createElement("button");
     b.className = "rangeBtn";
     b.textContent = seg[2];
-    b.onclick = () => playOne(i);
+    b.onclick = () => playFrom(i);
     box.appendChild(b);
   });
 }
 
-function playOne(i) {
-  if (!player) return;
-  if (checker) clearInterval(checker);
-
-  let s = segments[i][0];
-  let e = segments[i][1];
-
+function playFrom(i) {
   index = i;
-  player.setPlaybackRate(2);
-  player.seekTo(s, true);
-  player.playVideo();
-
-  checker = setInterval(() => {
-    if (player.getCurrentTime() >= e) {
-      player.pauseVideo();
-      clearInterval(checker);
-    }
-  }, 200);
+  playNext();
 }
 
 function autoPlay() {
@@ -153,10 +146,9 @@ function autoPlay() {
 }
 
 function playNext() {
-  if (index >= segments.length) {
-    alert("All timestamps finished");
-    return;
-  }
+  if (index >= segments.length) return;
+
+  highlight(index);
 
   let s = segments[index][0];
   let e = segments[index][1];
