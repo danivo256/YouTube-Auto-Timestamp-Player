@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Offline Timestamp Player</title>
+<title>YouTube Timestamp Player</title>
 
 <style>
 body {
@@ -22,30 +22,28 @@ input, textarea, button {
   border:1px solid #333;
 }
 
-#videoBox {
+#playerBox {
   position:relative;
 }
 
-#video {
+#player {
   width:100%;
+  aspect-ratio:16/9;
 }
 
-/* 🔥 FIX: move controls UP */
-#centerControls {
+/* controls */
+#controls {
   position:absolute;
-  top:50%; /* was 60% → overlap fix */
+  top:50%;
   left:50%;
   transform:translate(-50%,-50%);
   display:flex;
   gap:8px;
-  z-index:10;
 }
 
-.hidden { display:none !important; }
-
 .ctrlBtn {
-  width:48px;
-  height:48px;
+  width:46px;
+  height:46px;
   border-radius:50%;
   background:rgba(0,0,0,0.6);
   color:#00e5ff;
@@ -53,51 +51,14 @@ input, textarea, button {
   display:flex;
   align-items:center;
   justify-content:center;
-  font-size:12px;
+  cursor:pointer;
 }
 
-/* toggle */
-#toggleBtn {
-  position:absolute;
-  right:8px;
-  top:50%;
-  transform:translateY(-50%);
-  width:36px;
-  height:36px;
-  border-radius:50%;
-  background:#000;
-  color:#00e5ff;
-  border:1px solid #00e5ff;
-  z-index:20;
-}
-
-/* 🔥 exit button linked to controls */
-#exitFS {
-  position:absolute;
-  top:8px;
-  right:8px;
-  width:34px;
-  height:34px;
-  border-radius:50%;
-  background:#000;
-  color:#00e5ff;
-  border:1px solid #00e5ff;
-  z-index:30;
-}
-
-/* 🔥 timestamps restored */
+/* timestamp grid */
 #buttons {
   display:grid;
   grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
   gap:6px;
-  margin-top:10px;
-}
-
-.rangeBtn {
-  padding:6px;
-  border:1px solid #333;
-  background:#111;
-  color:#fff;
 }
 
 .rangeBtn.active {
@@ -105,41 +66,35 @@ input, textarea, button {
   color:#000;
 }
 
-/* history */
 .historyItem {
-  margin-top:5px;
   padding:6px;
   border:1px solid #222;
+  margin-top:5px;
 }
 </style>
 </head>
 
 <body>
 
-<input type="file" id="fileInput" accept="video/*">
-<textarea id="ranges"></textarea>
-<button onclick="loadVideo()">Load</button>
+<input id="ytLink" placeholder="Paste YouTube link">
+<textarea id="ranges" placeholder="00:00:00 - 00:05:00"></textarea>
+<button onclick="loadYT()">Load</button>
 
-<div id="videoBox">
-  <video id="video" controls></video>
+<div id="playerBox">
+  <div id="player"></div>
 
-  <div id="centerControls">
+  <div id="controls">
     <div class="ctrlBtn" onclick="seek(-60)">-60</div>
-    <div class="ctrlBtn" onclick="seek(-45)">-45</div>
     <div class="ctrlBtn" onclick="seek(-30)">-30</div>
     <div class="ctrlBtn" onclick="seek(-15)">-15</div>
 
-    <div class="ctrlBtn" onclick="prevSegment()">⏮</div>
-    <div class="ctrlBtn" onclick="nextSegment()">⏭</div>
+    <div class="ctrlBtn" onclick="prevSeg()">⏮</div>
+    <div class="ctrlBtn" onclick="nextSeg()">⏭</div>
 
     <div class="ctrlBtn" onclick="seek(15)">+15</div>
     <div class="ctrlBtn" onclick="seek(30)">+30</div>
-    <div class="ctrlBtn" onclick="seek(45)">+45</div>
     <div class="ctrlBtn" onclick="seek(60)">+60</div>
   </div>
-
-  <div id="toggleBtn" onclick="toggleControls()">≡</div>
-  <div id="exitFS" onclick="exitFS()">⤫</div>
 </div>
 
 <div id="buttons"></div>
@@ -147,58 +102,54 @@ input, textarea, button {
 <h3>History</h3>
 <div id="history"></div>
 
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <script>
-let video=document.getElementById("video");
-let controls=document.getElementById("centerControls");
-let exitBtn=document.getElementById("exitFS");
-let videoBox=document.getElementById("videoBox");
+let player;
+let segments=[];
+let index=-1;
+let videoId="";
 
-let segments=[], index=-1, fileName="";
-let timeout, manualHidden=false;
+/* extract id */
+function getId(url){
+  let m=url.match(/(?:v=|youtu\.be\/)([^&]+)/);
+  return m?m[1]:null;
+}
 
-/* LOAD */
-function loadVideo(){
-  let file=document.getElementById("fileInput").files[0];
-  if(!file) return;
+/* load */
+function loadYT(){
+  let url=document.getElementById("ytLink").value;
+  videoId=getId(url);
+  if(!videoId) return alert("Invalid link");
 
-  fileName=file.name;
-  video.src=URL.createObjectURL(file);
-
-  video.onloadedmetadata=()=>{
-    video.playbackRate=2;
-    restore();
-
-    setTimeout(()=>video.play().catch(()=>{}),200);
-
-    videoBox.requestFullscreen().catch(()=>{});
-    if(screen.orientation?.lock) screen.orientation.lock("landscape").catch(()=>{});
-  };
+  segments=[];
+  index=-1;
 
   parseSegments();
   makeButtons();
-  saveHistory();
+  saveHistory(url);
+
+  if(player){
+    player.loadVideoById(videoId);
+  } else {
+    player=new YT.Player('player',{
+      videoId:videoId,
+      events:{ onReady:onReady }
+    });
+  }
 }
 
-/* SEGMENTS */
+function onReady(){
+  player.setPlaybackRate(2);
+}
+
+/* segments */
 function parseSegments(){
-  segments=[];
   let lines=document.getElementById("ranges").value.split("\n");
-  lines.forEach((l,i)=>{
+  lines.forEach(l=>{
     if(!l.includes("-")) return;
     let p=l.split("-");
     segments.push([toSec(p[0]),toSec(p[1]),l]);
-  });
-}
-
-function makeButtons(){
-  let box=document.getElementById("buttons");
-  box.innerHTML="";
-  segments.forEach((s,i)=>{
-    let b=document.createElement("button");
-    b.className="rangeBtn";
-    b.textContent=s[2];
-    b.onclick=()=>playFrom(i);
-    box.appendChild(b);
   });
 }
 
@@ -207,102 +158,68 @@ function toSec(t){
   return p[0]*3600+p[1]*60+p[2];
 }
 
-/* PLAY */
-function playFrom(i){ index=i; playCurrent(); }
-function playCurrent(){
-  if(index<0||index>=segments.length) return;
-  video.currentTime=segments[index][0];
-  video.play();
+/* play */
+function playFrom(i){
+  index=i;
+  player.seekTo(segments[i][0],true);
+  player.playVideo();
 }
 
-/* AUTO */
-video.addEventListener("timeupdate",()=>{
-  save();
+/* auto next */
+setInterval(()=>{
+  if(index<0||!player.getCurrentTime) return;
 
-  if(index>=0 && video.currentTime>=segments[index][1]){
+  let t=player.getCurrentTime();
+  if(t>=segments[index][1]){
     index++;
-    if(index<segments.length) playCurrent();
+    if(index<segments.length){
+      playFrom(index);
+    }
   }
-});
+},500);
 
-/* SEEK */
+/* controls */
 function seek(s){
-  video.currentTime=Math.max(0,video.currentTime+s);
+  player.seekTo(player.getCurrentTime()+s,true);
 }
 
-/* NAV */
-function prevSegment(){ if(index>0){ index--; playCurrent(); } }
-function nextSegment(){ if(index<segments.length-1){ index++; playCurrent(); } }
+function prevSeg(){ if(index>0) playFrom(--index); }
+function nextSeg(){ if(index<segments.length-1) playFrom(++index); }
 
-/* CONTROLS */
-function toggleControls(){
-  manualHidden=!manualHidden;
-  updateControls();
+/* buttons */
+function makeButtons(){
+  let box=document.getElementById("buttons");
+  box.innerHTML="";
+  segments.forEach((s,i)=>{
+    let b=document.createElement("button");
+    b.textContent=s[2];
+    b.className="rangeBtn";
+    b.onclick=()=>playFrom(i);
+    box.appendChild(b);
+  });
 }
 
-function updateControls(){
-  controls.classList.toggle("hidden",manualHidden);
-  exitBtn.classList.toggle("hidden",manualHidden); /* 🔥 sync */
-}
-
-video.addEventListener("click",()=>{
-  if(!manualHidden){
-    controls.classList.remove("hidden");
-    exitBtn.classList.remove("hidden");
-
-    clearTimeout(timeout);
-    timeout=setTimeout(()=>{
-      controls.classList.add("hidden");
-      exitBtn.classList.add("hidden");
-    },2000);
-  }
-});
-
-/* EXIT FULLSCREEN */
-function exitFS(){
-  document.exitFullscreen();
-}
-
-/* RESUME */
-function save(){
-  localStorage.setItem("state",JSON.stringify({
-    n:fileName,
-    t:video.currentTime,
-    i:index,
-    r:document.getElementById("ranges").value
-  }));
-}
-
-function restore(){
-  let d=JSON.parse(localStorage.getItem("state")||"null");
-  if(!d||d.n!==fileName) return;
-
-  index=d.i;
-  video.currentTime=d.t;
-  document.getElementById("ranges").value=d.r;
-}
-
-/* HISTORY */
-function saveHistory(){
-  let data=JSON.parse(localStorage.getItem("hist")||"[]");
-  data.unshift({name:fileName,ranges:document.getElementById("ranges").value});
+/* history */
+function saveHistory(url){
+  let data=JSON.parse(localStorage.getItem("ytHist")||"[]");
+  data.unshift({url:url,ranges:document.getElementById("ranges").value});
   if(data.length>10) data.length=10;
-  localStorage.setItem("hist",JSON.stringify(data));
+  localStorage.setItem("ytHist",JSON.stringify(data));
   renderHistory();
 }
 
 function renderHistory(){
   let box=document.getElementById("history");
   box.innerHTML="";
-  let data=JSON.parse(localStorage.getItem("hist")||"[]");
+  let data=JSON.parse(localStorage.getItem("ytHist")||"[]");
 
   data.forEach(d=>{
     let div=document.createElement("div");
     div.className="historyItem";
-    div.innerHTML="<b>"+d.name+"</b>";
+    div.textContent=d.url;
     div.onclick=()=>{
+      document.getElementById("ytLink").value=d.url;
       document.getElementById("ranges").value=d.ranges;
-      alert("Select same file again");
     };
     box.appendChild(div);
   });
@@ -312,4 +229,4 @@ renderHistory();
 </script>
 
 </body>
-      </html>
+</html>
